@@ -1,0 +1,510 @@
+<!-- Lumenvalley web shell.  Injected before </body> by tools/build_web.py so
+     the pygbag bootstrap stays untouched.  Owns only chrome: title, loading
+     state, fullscreen, mute, controls help and an error banner. -->
+<style>
+  /* !important because pygbag paints body with its own letterbox grey
+     (#7f7f7f) after this stylesheet loads; that grey was the visible page
+     background behind the game.  The shell owns the page colour. */
+  html, body { margin: 0; background: #0a0a12 !important; color: #e8e8f0;
+               font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  /* Bottom-anchored: the game's HUD owns the top row, so chrome there hides
+     lives, coins and score. */
+  #lv-shell { position: fixed; left: 0; right: 0; bottom: 0; pointer-events: none;
+              z-index: 40; display: flex; justify-content: center;
+              flex-wrap: wrap; padding: 8px 10px; box-sizing: border-box; }
+  /* wrap: on a narrow window the bar used to run off both edges instead of
+     breaking, which hid the Sound and Save buttons entirely. */
+  #lv-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            justify-content: center; max-width: 100%; box-sizing: border-box;
+            pointer-events: auto; background: rgba(10, 10, 18, .82);
+            border: 1px solid #2a2a3c; border-radius: 10px;
+            padding: 6px 10px; }
+  #lv-title { font-weight: 700; letter-spacing: .12em; font-size: 14px;
+              color: #7ce6ff; margin-right: 6px; }
+  .lv-btn { pointer-events: auto; cursor: pointer; font: inherit;
+            font-size: 13px; color: #e8e8f0; background: #1c1c2a;
+            border: 1px solid #33334a; border-radius: 7px; padding: 6px 11px; }
+  .lv-btn:hover { background: #26263a; border-color: #4a4a68; }
+  .lv-btn[aria-pressed="true"] { background: #3a2350; border-color: #a06cff; }
+  #lv-loading { position: fixed; inset: 0; display: flex;
+                flex-direction: column; align-items: center;
+                justify-content: center; gap: 14px; z-index: 60;
+                background: radial-gradient(circle at 50% 40%, #16203a, #06060c 70%);
+                pointer-events: none; transition: opacity .4s ease; }
+  #lv-loading h1 { margin: 0; font-size: clamp(22px, 5vw, 46px);
+                   letter-spacing: .16em; color: #7ce6ff; }
+  #lv-loading p { margin: 0; color: #b9b9cc; font-size: 14px; }
+  #lv-loading .lv-bar { width: min(320px, 60vw); height: 6px;
+                        background: #1c2333; border-radius: 4px;
+                        overflow: hidden; }
+  /* pygbag's own status box ("Loading, please wait ...") is a green rectangle
+     that painted on top of this loading screen; the shell owns progress, error
+     and readiness, and the same information is reported here with a live
+     clock.  Hidden rather than restyled so the two cannot drift. */
+  #infobox { display: none !important; }
+  #lv-loading .lv-bar span { display: block; height: 100%; width: 40%;
+                             border-radius: 4px;
+                             background: linear-gradient(90deg, #7ce6ff, #ff6edc);
+                             animation: lv-slide 1.3s ease-in-out infinite; }
+  #lv-loading-note { margin: 0; color: #a3a3bd; font-size: 12px;
+                     max-width: min(420px, 80vw); text-align: center; }
+  /* The splash normally passes clicks through to the game underneath.  When a
+     slow download leaves the player waiting, the reload button has to be
+     clickable, so that one element opts back in. */
+  #lv-reload { pointer-events: auto; display: none; margin-top: 4px; }
+  #lv-reload.lv-open { display: inline-block; }
+  /* Browsers only allow audio after a gesture, and pygbag's runtime waits for
+     one before it starts the game; its own prompt lives in #infobox, which the
+     shell hides.  This button is that prompt, in the shell's own chrome. */
+  #lv-start { pointer-events: auto; display: none; margin-top: 6px;
+              border-color: #7ce6ff; color: #eaf9ff; background: #14313d; }
+  #lv-start.lv-open { display: inline-block; }
+  @keyframes lv-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  #lv-overlay { position: fixed; inset: 0; display: none; z-index: 55;
+                background: rgba(6, 6, 12, .88); pointer-events: auto;
+                align-items: center; justify-content: center; }
+  #lv-overlay.lv-open { display: flex; }
+  #lv-help { max-width: 520px; padding: 22px 26px; border-radius: 12px;
+             background: #12121d; border: 1px solid #33334a; }
+  #lv-help h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: .1em;
+                color: #7ce6ff; }
+  #lv-help table { border-collapse: collapse; font-size: 14px; }
+  #lv-help td { padding: 4px 0; }
+  #lv-help td:first-child { padding-right: 22px; color: #ffd479;
+                            font-family: ui-monospace, monospace; }
+  #lv-error { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+              max-width: min(720px, 92vw); display: none; z-index: 70;
+              background: #3a1018; border: 1px solid #ff5e7a; color: #ffd9e0;
+              border-radius: 9px; padding: 10px 14px; font-size: 13px;
+              pointer-events: auto; white-space: pre-wrap; }
+  #lv-error.lv-open { display: block; }
+  /* 11px text needs 4.5:1 against the composited panel; the old #6d6d85 sat at
+     roughly 3.2:1 and failed.  Kept quiet, just readable. */
+  #lv-note { font-size: 11px; color: #a3a3bd; margin-left: 6px;
+             white-space: nowrap; }
+  @media (max-width: 680px) { #lv-note { display: none; } }
+  /* Keyboard focus must be unmistakable: the game is keyboard-first, and the
+     default UA ring disappears against the purple pressed button. */
+  .lv-btn:focus-visible, #lv-help:focus-visible {
+    outline: 3px solid #ffd479; outline-offset: 2px; }
+  /* The canvas is the whole playfield, so the focus ring needs a rule of its
+     own: after a mouse click it drew a permanent 3 px yellow frame around the
+     game, which reads as a border rather than a focus cue.  Keyboard focus
+     still gets the ring - the shell records which modality was used last, and
+     tabbing to the canvas is the case that has to stay visible. */
+  #canvas:focus { outline: none; }
+  html.lv-keyboard #canvas:focus-visible {
+    outline: 3px solid #ffd479; outline-offset: 2px; }
+  /* The OS accessibility preference wins over decoration: no sliding bar, no
+     fade.  The game itself reads the same media query (LV_PREFERS_REDUCED_
+     MOTION) and turns its own motion off unless the player chose otherwise. */
+  @media (prefers-reduced-motion: reduce) {
+    #lv-loading { transition: none; }
+    #lv-loading .lv-bar span { animation: none; width: 100%; }
+  }
+</style>
+
+<div id="lv-shell">
+  <div id="lv-top">
+    <span id="lv-title">LUMENVALLEY</span>
+    <button class="lv-btn" id="lv-fs" type="button">Fullscreen</button>
+    <button class="lv-btn" id="lv-mute" type="button" aria-pressed="false">Sound: on</button>
+    <button class="lv-btn" id="lv-help-btn" type="button"
+            aria-controls="lv-overlay" aria-expanded="false">Controls</button>
+    <button class="lv-btn" id="lv-export" type="button">Save data</button>
+    <button class="lv-btn" id="lv-import" type="button">Load data</button>
+    <input type="file" id="lv-import-file" accept="application/json" hidden>
+    <span id="lv-note">progress saves in this browser</span>
+  </div>
+</div>
+
+<div id="lv-loading">
+  <h1>LUMENVALLEY</h1>
+  <div class="lv-bar"><span></span></div>
+  <p id="lv-loading-text">Loading the game engine…</p>
+  <p id="lv-loading-note">First visit downloads the ~11 MB Python runtime; later
+    visits reuse the browser cache.</p>
+  <button class="lv-btn" id="lv-start" type="button">Click to start</button>
+  <button class="lv-btn" id="lv-reload" type="button">Reload</button>
+</div>
+
+<div id="lv-overlay">
+  <!-- A real dialog for assistive tech: announced on open, modal to the tab
+       order, labelled by its own heading, and focus lands inside it. -->
+  <div id="lv-help" role="dialog" aria-modal="true"
+       aria-labelledby="lv-help-title" tabindex="-1">
+    <h2 id="lv-help-title">CONTROLS</h2>
+    <table>
+      <tr><td>← → / A D</td><td>run</td></tr>
+      <tr><td>Space / W / ↑</td><td>jump (hold for height)</td></tr>
+      <tr><td>X / L</td><td>dash</td></tr>
+      <tr><td>↓ / S</td><td>drop through platforms</td></tr>
+      <tr><td>Enter</td><td>confirm / start</td></tr>
+      <tr><td>Esc</td><td>back / pause menu</td></tr>
+      <tr><td>M</td><td>sound on / off</td></tr>
+      <tr><td>R</td><td>retry level</td></tr>
+      <tr><td>F11</td><td>fullscreen</td></tr>
+    </table>
+    <p style="color:#8f8fa8;font-size:12px;margin:14px 0 0">
+      Gamepad supported. Click the screen if the controls stop responding.
+    </p>
+  </div>
+</div>
+
+<div id="lv-error" role="alert" aria-live="assertive"></div>
+
+<script type="application/javascript">
+(function () {
+  var loading = document.getElementById("lv-loading");
+  var overlay = document.getElementById("lv-overlay");
+  var errorBox = document.getElementById("lv-error");
+  var muteBtn = document.getElementById("lv-mute");
+
+  window.LV_MUTED = false;
+  window.LV_READY = false;
+
+  // The OS/browser accessibility preference, re-read whenever it changes.  The
+  // Python side polls this once at startup and turns its own motion effects
+  // off unless the player has explicitly chosen a motion setting.
+  window.LV_PREFERS_REDUCED_MOTION = false;
+  var motionQuery = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  function publishMotion() {
+    window.LV_PREFERS_REDUCED_MOTION = !!(motionQuery && motionQuery.matches);
+  }
+  publishMotion();
+  if (motionQuery) {
+    if (motionQuery.addEventListener) {
+      motionQuery.addEventListener("change", publishMotion);
+    } else if (motionQuery.addListener) {
+      motionQuery.addListener(publishMotion);
+    }
+  }
+  // pygbag's template omits lang, and a screen reader guesses the language
+  // without it; the game's text is English.
+  if (!document.documentElement.lang) document.documentElement.lang = "en";
+
+  // pygbag's resize handler runs once while the canvas is still its placeholder
+  // 1x1 size, computes aspect ratio 1:1, and stretches the 1600x480 game into a
+  // square.  Own the fit here instead: keep the real game aspect ratio and
+  // leave the bottom chrome bar its own room.  config exists before this
+  // script runs; user_canvas tells pygbag not to re-apply its own sizing.
+  if (window.config) window.config.user_canvas = 1;
+
+  // The canvas is the whole game, so it is exposed as an application widget:
+  // focusable by keyboard, named for assistive tech, and not an unlabelled
+  // image.  Applied once pygbag has created the element.
+  function nameCanvas() {
+    var c = document.getElementById("canvas");
+    if (!c || c.getAttribute("role")) return;
+    c.setAttribute("role", "application");
+    c.setAttribute("tabindex", "0");
+    c.setAttribute("aria-label", "Lumenvalley, a running and jumping game. "
+      + "Arrow keys or A and D run, Space or W jumps, X dashes, Escape pauses. "
+      + "The Controls button lists every key.");
+  }
+
+  var fitKey = "";
+  function fitCanvas() {
+    nameCanvas();
+    var c = document.getElementById("canvas");
+    if (!c || !c.width || !c.height || (c.width === 1 && c.height === 1)) return;
+    var shell = document.getElementById("lv-shell");
+    var barH = shell ? shell.getBoundingClientRect().height : 0;
+    var pad = 8;
+    var availW = Math.max(1, window.innerWidth - pad * 2);
+    var availH = Math.max(1, window.innerHeight - barH - pad * 2);
+    var scale = Math.min(availW / c.width, availH / c.height);
+    var w = Math.max(1, Math.round(c.width * scale));
+    var h = Math.max(1, Math.round(c.height * scale));
+    var left = Math.round((window.innerWidth - w) / 2);
+    var top = Math.max(0, Math.round((window.innerHeight - barH - h) / 2));
+    var key = [w, h, left, top].join("x");
+    if (key === fitKey) return;
+    fitKey = key;
+    c.style.position = "fixed";
+    c.style.width = w + "px";
+    c.style.height = h + "px";
+    c.style.left = left + "px";
+    c.style.top = top + "px";
+    c.style.right = "auto";
+    c.style.bottom = "auto";
+    c.style.margin = "0";
+  }
+  function scheduleFit() {
+    fitCanvas();
+    setTimeout(fitCanvas, 150);
+    setTimeout(fitCanvas, 500);
+  }
+  window.addEventListener("resize", scheduleFit);
+  // SDL sets the canvas width/height after boot; keep checking until it does.
+  setInterval(fitCanvas, 750);
+
+  function hideLoading() {
+    if (!loading) return;
+    loading.style.opacity = "0";
+    setTimeout(function () { loading.style.display = "none"; }, 420);
+  }
+
+  // Elapsed time rather than a fake percentage.  The 11 MB runtime is fetched
+  // from the pygbag CDN, which sends no Timing-Allow-Origin header, so cross-
+  // origin resource timings report zero bytes: a determinate bar would sit at
+  // 0% for the whole wait (measured).  A clock is honest and tells the player
+  // the page is alive.
+  //
+  // The same loop owns the gesture prompt.  pygbag's runtime opens the audio
+  // device before the game runs, and a browser only grants audio after a
+  // gesture; until then the runtime spins waiting, and that wait used to be
+  // announced inside #infobox — which the shell hides as unstyled chrome.  A
+  // player who never happens to click would sit at a loading bar that can
+  // never finish.  MM.UME flips true once the gesture lands.
+  // Keyboard-modality tracking for the canvas focus ring (see the CSS above).
+  var rootEl = document.documentElement;
+  window.addEventListener("keydown", function () {
+    rootEl.classList.add("lv-keyboard");
+  }, true);
+  function pointerUsed() { rootEl.classList.remove("lv-keyboard"); }
+  window.addEventListener("mousedown", pointerUsed, true);
+  window.addEventListener("touchstart", pointerUsed, true);
+
+  var startBtn = document.getElementById("lv-start");
+  var awaitingGesture = false;
+  function umePending() {
+    return !!(window.MM && window.MM.UME === false);
+  }
+  if (startBtn) {
+    startBtn.addEventListener("click", function () {
+      startBtn.classList.remove("lv-open");
+      var c = document.getElementById("canvas");
+      if (c && c.focus) { try { c.focus(); } catch (e) {} }
+    });
+  }
+  (function trackLoad() {
+    var text = document.getElementById("lv-loading-text");
+    var note = document.getElementById("lv-loading-note");
+    var started = Date.now();
+    setInterval(function () {
+      if (window.LV_READY || !text) return;
+      var secs = Math.round((Date.now() - started) / 1000);
+      if (umePending()) {
+        if (!awaitingGesture) {
+          awaitingGesture = true;
+          if (startBtn) startBtn.classList.add("lv-open");
+        }
+        text.textContent = "One click to start";
+        if (note) note.textContent =
+          "Your browser needs a click before it will let the game play "
+          + "sound. Click anywhere, or use the button below.";
+        return;
+      }
+      if (awaitingGesture) {
+        awaitingGesture = false;
+        if (startBtn) startBtn.classList.remove("lv-open");
+        if (note) note.textContent = "Starting up…";
+      }
+      text.textContent = "Loading the engine — " + secs + " s";
+      if (secs >= 8 && note) note.textContent =
+        "Still on the first visit: the Python runtime is ~11 MB. "
+        + "Later visits load from the browser cache.";
+    }, 500);
+  })();
+
+  function pollReady() {
+    if (window.LV_READY) {
+      hideLoading();
+      // The engine has now set the real canvas size; apply the correct fit.
+      scheduleFit();
+      return;
+    }
+    setTimeout(pollReady, 250);
+  }
+  pollReady();
+  // Never trap the player behind the splash if the engine reports nothing.
+  setTimeout(function () {
+    var text = document.getElementById("lv-loading-text");
+    if (text && !window.LV_READY) {
+      text.textContent = "Still loading… this can take ~20 s on first visit.";
+    }
+  }, 12000);
+  // The splash must not disappear on its own: it used to fade out at 90 s even
+  // when nothing had booted, which on a throttled connection produced a black
+  // page with the chrome bar and no explanation at all.  Past that point keep
+  // the splash, say what is happening and offer a reload — the browser cache
+  // keeps whatever already arrived, so a retry is cheaper than the first visit.
+  setTimeout(function () {
+    if (window.LV_READY) return;
+    if (umePending()) return;  // the gesture prompt is the right message here
+    var text = document.getElementById("lv-loading-text");
+    var note = document.getElementById("lv-loading-note");
+    var reload = document.getElementById("lv-reload");
+    if (text) text.textContent = "Still downloading the engine…";
+    if (note) note.textContent =
+      "The ~11 MB Python runtime is coming in slowly on this connection. "
+      + "It is still working — give it another minute, or reload to retry "
+      + "with whatever the browser has already cached.";
+    if (reload) reload.classList.add("lv-open");
+  }, 90000);
+  var reloadBtn = document.getElementById("lv-reload");
+  if (reloadBtn) {
+    reloadBtn.addEventListener("click", function () { window.location.reload(); });
+  }
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.add("lv-open");
+  }
+  window.addEventListener("error", function (e) {
+    showError("Something went wrong: " + (e.message || "script error"));
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var reason = e.reason && (e.reason.message || e.reason);
+    showError("Something went wrong: " + (reason || "unhandled promise"));
+  });
+  setInterval(function () {
+    if (window.LV_SAVE_ERROR) showError("Saving is unavailable: " + window.LV_SAVE_ERROR);
+  }, 1500);
+
+  document.getElementById("lv-fs").addEventListener("click", function () {
+    var target = document.documentElement;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else if (target.requestFullscreen) {
+      target.requestFullscreen();
+    }
+  });
+
+  muteBtn.addEventListener("click", function () {
+    window.LV_MUTED = !window.LV_MUTED;
+    muteBtn.textContent = "Sound: " + (window.LV_MUTED ? "off" : "on");
+    muteBtn.setAttribute("aria-pressed", window.LV_MUTED ? "true" : "false");
+  });
+
+  // Dialog behaviour, not a class toggle: focus moves into the panel on open,
+  // Escape (or the backdrop) closes it and hands focus back to the button, and
+  // aria-expanded tells assistive tech whether it is showing.
+  var helpBtn = document.getElementById("lv-help-btn");
+  function helpOpen() { return overlay.classList.contains("lv-open"); }
+  function openHelp() {
+    overlay.classList.add("lv-open");
+    helpBtn.setAttribute("aria-expanded", "true");
+    var dlg = document.getElementById("lv-help");
+    if (dlg && dlg.focus) dlg.focus();
+  }
+  function closeHelp(returnFocus) {
+    if (!helpOpen()) return;
+    overlay.classList.remove("lv-open");
+    helpBtn.setAttribute("aria-expanded", "false");
+    if (returnFocus && helpBtn.focus) helpBtn.focus();
+  }
+  window.LV_HELP_OPEN = helpOpen;
+  helpBtn.addEventListener("click", function () {
+    if (helpOpen()) closeHelp(true); else openHelp();
+  });
+
+  // The Python side polls this flag and flushes through the same save path as
+  // a level completion, so closing a tab never loses an unlocked record.
+  function flushSave() { window.LV_SAVE_NOW = true; }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") flushSave();
+  });
+  window.addEventListener("pagehide", flushSave);
+
+  // Export/import speak the same JSON shape as web_store.export_text().
+  var KEYS = {progress: "lumenvalley.progress", customs: "lumenvalley.customs"};
+  function readKey(k) {
+    try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; }
+  }
+  document.getElementById("lv-export").addEventListener("click", function () {
+    var doc = {
+      format: "lumenvalley-save",
+      schema_version: 1,
+      progress: readKey(KEYS.progress),
+      customs: readKey(KEYS.customs)
+    };
+    var blob = new Blob([JSON.stringify(doc, null, 1)], {type: "application/json"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "lumenvalley-save.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  });
+  var importFile = document.getElementById("lv-import-file");
+  document.getElementById("lv-import").addEventListener("click", function () {
+    importFile.click();
+  });
+  importFile.addEventListener("change", function () {
+    var file = importFile.files && importFile.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var doc = JSON.parse(reader.result);
+        if (!doc || doc.format !== "lumenvalley-save") throw new Error("not a save file");
+        if (doc.progress !== null && doc.progress !== undefined) {
+          localStorage.setItem(KEYS.progress, JSON.stringify(doc.progress));
+        }
+        if (doc.customs) {
+          localStorage.setItem(KEYS.customs, JSON.stringify(doc.customs));
+        }
+        window.location.reload();
+      } catch (err) {
+        showError("Could not load that save: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) closeHelp(true);
+  });
+  // Emscripten claims Tab for the whole document, so the browser's own tab
+  // order is dead: a keyboard-only player could never reach the chrome, and
+  // Tab between the buttons did nothing either.  Own the ring inside the game
+  // chrome (capture phase, so this runs before SDL's handler).  Focus that is
+  // not ours — a page-level control — keeps the browser's own behaviour.
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Tab") return;
+    // getClientRects, not offsetParent: the canvas is position:fixed, so its
+    // offsetParent is null and it would silently drop out of the ring.
+    var order = Array.prototype.filter.call(
+      document.querySelectorAll("#lv-top .lv-btn, #canvas"),
+      function (el) { return el.getClientRects().length > 0; });
+    if (!order.length) return;
+    var active = document.activeElement;
+    var index = order.indexOf(active);
+    if (index === -1 && active !== document.body) return;
+    e.preventDefault();
+    var step = e.shiftKey ? -1 : 1;
+    order[(index + step + order.length) % order.length].focus();
+  }, true);
+
+  // SDL swallows Enter and Space for the whole document, so a focused chrome
+  // button could be tabbed to but never activated by keyboard.  Activate it
+  // here and keep the key from reaching the game.
+  document.addEventListener("keydown", function (e) {
+    var active = document.activeElement;
+    if (!active || !active.classList
+        || !active.classList.contains("lv-btn")) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    active.click();
+  }, true);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && helpOpen()) {
+      closeHelp(true);
+      return;
+    }
+    // Keyboard focus can drift to the buttons; put it back on the canvas.  Not
+    // while the help dialog is open, or typing in it would drop the player
+    // into the game behind it.
+    if (helpOpen()) return;
+    if (e.key === " " || e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      var canvas = document.getElementById("canvas");
+      if (canvas && document.activeElement !== canvas) canvas.focus();
+    }
+  });
+})();
+</script>

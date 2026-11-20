@@ -1,0 +1,66 @@
+name: Deploy web build to Pages
+
+# Builds the browser version of Lumenvalley with pygbag and publishes it to
+# GitHub Pages.  Nothing is committed as a build artefact: every deploy is
+# rebuilt from source with the toolchain pinned below.
+#
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a deployment that has started is allowed to finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install toolchain
+        run: |
+          python -m pip install --upgrade pip
+          # pygbag resolves its wasm package index from the host interpreter's
+          # ABI tag (index-0.9.3-cp312.json) and 3.12 is its DEFAULT_PYBUILD,
+          # i.e. the runtime the browser actually boots.  Building under 3.15
+          # asks for index-0.9.3-cp315.json, which its CDN does not publish.
+          pip install "pygame-ce==2.5.8" "pygbag==0.9.3"
+
+      - name: Build static site
+        # ume_block=1 keeps the "click to start" gate, which is what unlocks
+        # audio in browsers that block autoplay.  --base-url gives the page an
+        # absolute og:image, so shared links show the launch card.
+        run: python tools/build_web.py --base-url "${{ steps.pages.outputs.base_url }}"
+
+      - name: Upload Pages artefact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/lumenvalley/build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

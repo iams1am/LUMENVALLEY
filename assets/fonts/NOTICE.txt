@@ -1,0 +1,19 @@
+FreeSansBold.ttf - GNU FreeFont, FreeSans Bold.
+
+Source: shipped inside pygame-ce (pygame/freesansbold.ttf), itself built from
+GNU FreeFont.  FreeFont is distributed under the GNU General Public License
+version 3 or later with the following font exception:
+
+    As a special exception, if you create a document which uses this font,
+    and embed this font or unaltered portions of this font into the document,
+    this font does not by itself cause the resulting document to be covered
+    by the GNU General Public License.  This exception does not however
+    invalidate any other reasons why the document might be covered by the GNU
+    General Public License.  If you modify this font, you may extend this
+    exception to your version of the font, but you are not obligated to do so.
+    If you do not wish to do so, delete this exception statement from your
+    version.
+
+License text: https://www.gnu.org/licenses/gpl-3.0.txt
+The font is used unmodified.  Replacing it with another OFL/GPL font only
+requires changing FONT_PATH in pygame_view.py.

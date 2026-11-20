@@ -1,0 +1,52 @@
+Lumenvalley
+Copyright (c) 2026 Siam (https://github.com/iams1am)
+https://github.com/iams1am/LUMENVALLEY
+
+Lumenvalley - its code, levels, art, music and sound - is licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0). The full
+licence is in LICENSE; a summary is at
+https://creativecommons.org/licenses/by/4.0/
+
+You may copy, share, modify, adapt and build on this game for any purpose,
+including commercially. Whenever you share it or anything made from it (a copy,
+a fork, a modified version, a port, or parts of its code or art), you must:
+
+  1. Credit the author and the game, for example:
+
+       "Lumenvalley" by Siam (iams1am) - https://github.com/iams1am/LUMENVALLEY
+
+  2. Link to the licence (https://creativecommons.org/licenses/by/4.0/).
+
+  3. Say whether you made changes, and keep this copyright and credit notice.
+
+Third-party components keep their own licences
+----------------------------------------------
+
+* assets/fonts/FreeSansBold.ttf - GNU FreeFont (FreeSans Bold), used
+  unmodified. GNU General Public License v3 or later with the font exception;
+  see assets/fonts/NOTICE.txt and https://www.gnu.org/licenses/gpl-3.0.txt
+
+* web/pygbag-default.tmpl - adapted from the pygbag 0.9.3 page template
+  (https://github.com/pygame-web/pygbag), distributed under the MIT License:
+
+    MIT License
+
+    Copyright (c) 2022 pygame-web
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.

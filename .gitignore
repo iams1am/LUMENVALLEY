@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data (player-specific, never committed)
+save.json
+custom.json
+*.save.json
+save.json.tmp
+custom.json.tmp
+
+# Test / probe artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+probe_*.json
+
+# Build output
+build/
+dist/
+*.egg-info/
+
+# Local-only reference material
+reference_pics/
